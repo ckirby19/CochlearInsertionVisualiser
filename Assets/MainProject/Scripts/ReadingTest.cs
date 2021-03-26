@@ -10,8 +10,8 @@ public class ReadingTest : MonoBehaviour
     private List<double> posList;
     private byte[] byte_array;
 
-    [DllImport("cpp_example_dll.dll",CallingConvention = CallingConvention.Cdecl)]
-    static extern int copy_array(double[] output, int length);
+    // [DllImport("cpp_example_dll.dll",CallingConvention = CallingConvention.Cdecl)]
+    // static extern int copy_array(double[] output, int length);
     private int outLength;
 
     // Start is called before the first frame update
@@ -37,7 +37,8 @@ public class ReadingTest : MonoBehaviour
             posOutput[i] = posList[i];
         };
         print(posOutput);
-        copy_array(posOutput,outLength);
+        // copy_array(posOutput,outLength);
+
         
     }
 }

@@ -10,6 +10,7 @@ using fts;
 [PluginAttr("cpp_example_dll")]
 public static class FooPluginAPI_Auto
 {
+    //Examples
     [PluginFunctionAttr("simple_func")] 
     public static SimpleFunc simpleFunc = null;
     public delegate int SimpleFunc();
@@ -34,6 +35,10 @@ public static class FooPluginAPI_Auto
     [PluginFunctionAttr("cochlear_curl")]
     public static CochlearCurl cochlearCurl = null;
     public delegate float CochlearCurl(float curl);
+
+    [PluginFunctionAttr("copy_array")]
+    public static CopyArray copyArray = null;
+    public delegate int CopyArray(double[] output, int length);
 }
 
 
