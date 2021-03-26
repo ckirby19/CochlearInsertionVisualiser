@@ -19,7 +19,7 @@ public class ReadingTest : MonoBehaviour
     {
         // interp = FooPluginAPI_Auto.sum(2.3f, 1.2f);
         // interp = FooPluginAPI_Auto.cochlearCurl(0.1f);
-        
+        posList = new List<double>();
     }
 
     // Update is called once per frame
