@@ -39,6 +39,10 @@ public static class FooPluginAPI_Auto
     [PluginFunctionAttr("copy_array")]
     public static CopyArray copyArray = null;
     public delegate int CopyArray(double[] output, int length);
+
+    [PluginFunctionAttr("send_single")]
+    public static SendSingle sendSingle = null;
+    public delegate double SendSingle(double value);
 }
 
 

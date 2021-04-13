@@ -255,6 +255,7 @@ public class CochlearCurling : MonoBehaviour
             interp = Mathf.Clamp(interp-Time.fixedDeltaTime/timeToCurl,0f,1f);
             if (interp <= 0.000001f){
                 electrodeInsertionSpeed = 0;
+                automateInsertion = false;
             }
         }
         if (automateRetraction){
@@ -263,6 +264,7 @@ public class CochlearCurling : MonoBehaviour
             interp = Mathf.Clamp(interp+Time.fixedDeltaTime/timeToCurl,0f,1f);
             if (interp >= 0.9999f){
                 electrodeInsertionSpeed = 0;
+                automateRetraction = false;
             }
         }
 

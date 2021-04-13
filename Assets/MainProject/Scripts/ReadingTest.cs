@@ -17,8 +17,6 @@ public class ReadingTest : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        // interp = FooPluginAPI_Auto.sum(2.3f, 1.2f);
-        // interp = FooPluginAPI_Auto.cochlearCurl(0.1f);
         posList = new List<double>();
     }
 
@@ -26,7 +24,10 @@ public class ReadingTest : MonoBehaviour
     void Update()
     {
         if (this.GetComponent<CochlearCurling>().automateInsertion || this.GetComponent<CochlearCurling>().automateRetraction){
-            posList.Add((double)this.transform.position.y);
+            double outputVal = (double)this.transform.position.y;
+            posList.Add(outputVal);
+            FooPluginAPI_Auto.sendSingle(outputVal);
+
         }
     }
 
@@ -36,8 +37,11 @@ public class ReadingTest : MonoBehaviour
         for (int i=0; i < posList.Count; i++){
             posOutput[i] = posList[i];
         };
-        print(posOutput);
-        // copy_array(posOutput,outLength);
+        var val = FooPluginAPI_Auto.simpleFunc();
+        Debug.Log(string.Format("simple_func: {0}", val));
+
+        
+        FooPluginAPI_Auto.copyArray(posOutput,outLength);
 
         
     }
