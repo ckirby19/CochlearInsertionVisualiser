@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using System;
+using System.Diagnostics;
 // https://answers.unity.com/questions/550262/how-to-follow-curved-path.html
 // https://answers.unity.com/questions/392606/line-drawing-how-can-i-interpolate-between-points.html
 // https://www.reddit.com/r/gamedev/comments/96f8jl/if_you_are_making_an_rpg_you_need_to_know_the/
@@ -18,10 +19,13 @@ public class CochlearCurling : MonoBehaviour
     // private float stepSize = 0.1f;
     public float stepSize = 25f;
     public bool evenDistribution = false;
-    [Range(0,18)]public int criticalPoint;
+   
 
     [Header("Insertion Settings")]
     public bool automateInsertion;
+
+    public bool automateInsertionWithSpatial;
+    public bool automateNonlinearInsertion;
     public bool  automateRetraction;
     public bool ThreeDCurl;
     [Range(0f,360f)] public float electrodeRoll = 0f;
@@ -30,8 +34,18 @@ public class CochlearCurling : MonoBehaviour
     [Range(-19f,19f)] public float angleOfInsertion = 0f;
 
     [Range(0f,1f)] public float interp = 1f; //for interpolation of angle and pos
+     private float previousInterp, modifiedInterp;
+
+    [Header("Curling Modification")]
+    [Range(0,100)]public int criticalPoint;
     public float curlingModifier = 0f;
-    private float previousInterp, modifiedInterp;
+    
+
+    //Saving Data
+    [HideInInspector] public List<float> linearPosOutput,rotaryPosOutput,timeOutput;
+    [HideInInspector] public Stopwatch myTimer;
+    
+   
 
     //For mesh
     private Mesh mesh;
@@ -42,7 +56,7 @@ public class CochlearCurling : MonoBehaviour
     //Hit Detection
     private Quaternion qAngle,insertionAngle;
     private Vector3 hitDirection;
-    private float dist = Mathf.Infinity;
+    private float distInner, distOuter;
    
     //Defined from (Clark et.al, 2011)
     private float R,theta,theta_mod;
@@ -52,6 +66,7 @@ public class CochlearCurling : MonoBehaviour
     private float THETA_END = 380f;
     // private float THETA_END = 910.3f;
     private float cochlearLength, totalLength;
+
     //Unrolling Mesh
     private Vector3 basePoint,origin,planeNormal;
     private Vector3[] endPos,varPos;
@@ -66,12 +81,22 @@ public class CochlearCurling : MonoBehaviour
     private Vector3 scaleVector;
     private float previousAngleOfInsertion;
 
+    private int numSteps;
+
+    private Vector3 velocityVec;
+    private Vector3 previousPositionForVec, startingPosition;
+
+    private float wallScalar = 2.0f, prevWallScalar = 2.0f, bestInterp = 1.0f;
+    private float finalMassPos;
+
+    
+
     #endregion
     void Awake()
     {
         mesh = GetComponent<MeshFilter>().mesh;
         mesh.MarkDynamic();
-        Time.fixedDeltaTime = 0.02f; //Seconds
+        Time.fixedDeltaTime = 0.02f; //0.02 Seconds
         layerMask = 1 << 3; //3 is the layer number for the cochlear model
         scaleVector = new Vector3(scale,scale,scale);
         
@@ -95,8 +120,23 @@ public class CochlearCurling : MonoBehaviour
 
         previousInterp = interp;  
 
+        numSteps = 0;
+
         this.transform.RotateAround(finalMassObject.transform.position,Vector3.forward,angleOfInsertion - previousAngleOfInsertion);
         previousAngleOfInsertion = angleOfInsertion;
+
+        // myTimer = new Stopwatch();
+
+        // myTimer.Start();
+
+        numSteps = 0;
+
+        velocityVec = new Vector3(0,1,0);
+
+        previousPositionForVec = this.transform.position;
+
+        startingPosition = this.transform.position;
+        UnityEngine.Debug.Log(startingPosition);
 
     }
 
@@ -138,10 +178,11 @@ public class CochlearCurling : MonoBehaviour
             if (i==numPoints-1){
                 finalMassObject = GameObject.CreatePrimitive(PrimitiveType.Capsule);
                 finalMassObject.name = "MasterMass";
-                finalMassObject.transform.localScale = 1.8f*scaleVector;
+                finalMassObject.transform.localScale = 2f*scaleVector;
                 finalMassObject.AddComponent<Rigidbody>();
                 finalMassObject.GetComponent<Rigidbody>().drag = 1f;
                 finalMassObject.GetComponent<Rigidbody>().useGravity = false;
+                // springMassObject.GetComponent<CapsuleCollider>().isTrigger = true;
                 finalMassObject.GetComponent<Renderer>().material.SetColor("_Color",Color.red);
                 // finalMassObject.GetComponent<Renderer>().material.enableInstancing = true;
                 finalMassObject.transform.SetParent(this.transform);
@@ -150,10 +191,11 @@ public class CochlearCurling : MonoBehaviour
             else{
                 springMassObject = GameObject.CreatePrimitive(PrimitiveType.Capsule);
                 springMassObject.name = "Mass" + i.ToString();
-                springMassObject.transform.localScale = 1.8f*scaleVector;
+                springMassObject.transform.localScale = 2f*scaleVector;
                 springMassObject.AddComponent<Rigidbody>();
                 springMassObject.GetComponent<Rigidbody>().drag = 1f;
                 springMassObject.GetComponent<Rigidbody>().useGravity = false;
+                // springMassObject.GetComponent<CapsuleCollider>().isTrigger = true;
                 springMassObject.GetComponent<Renderer>().material.SetColor("_Color",Color.red);
                 // springMassObject.GetComponent<Renderer>().material.enableInstancing = true;
                 springMassObject.transform.SetParent(this.transform);
@@ -177,13 +219,26 @@ public class CochlearCurling : MonoBehaviour
 
                 //Create Configurable Joints
                 massList[i].AddComponent<ConfigurableJoint>();
+                // massList[i].GetComponent<ConfigurableJoint>().configuredInWorldSpace = true;
+                massList[i].GetComponent<ConfigurableJoint>().enablePreprocessing = true;
                 massList[i].GetComponent<ConfigurableJoint>().connectedBody = massList[i-1].GetComponent<Rigidbody>();
                 massList[i].GetComponent<ConfigurableJoint>().xMotion = ConfigurableJointMotion.Locked;
-                // massList[i].GetComponent<ConfigurableJoint>().yMotion = ConfigurableJointMotion.Locked;
+                // massList[i].GetComponent<ConfigurableJoint>().yMotion = ConfigurableJointMotion.Limited;
                 massList[i].GetComponent<ConfigurableJoint>().zMotion = ConfigurableJointMotion.Locked;
                 massList[i].GetComponent<ConfigurableJoint>().angularXMotion = ConfigurableJointMotion.Locked;
                 massList[i].GetComponent<ConfigurableJoint>().angularYMotion = ConfigurableJointMotion.Locked;
+                // massList[i].GetComponent<ConfigurableJoint>().angularZMotion = ConfigurableJointMotion.Limited;
                 massList[i].GetComponent<ConfigurableJoint>().enableCollision = true;
+
+                //For joint limits
+                // SoftJointLimitSpring springJointLimit = new SoftJointLimitSpring();
+                // springJointLimit.damper = 10f;
+                // springJointLimit.spring = 6f;
+                // SoftJointLimit jointLimit = new SoftJointLimit();
+                // jointLimit.limit=2.0f;
+                // massList[i].GetComponent<ConfigurableJoint>().linearLimit = jointLimit;
+                // massList[i].GetComponent<ConfigurableJoint>().linearLimitSpring = springJointLimit;
+                
                 
             }
 
@@ -223,9 +278,11 @@ public class CochlearCurling : MonoBehaviour
             }
         }
 
-        print(cochlearLength);
-        print(totalLength);
-        this.transform.Translate(new Vector3(0,-42.3f,0)); 
+        // print(cochlearLength);
+        // print(totalLength);
+
+        // Starting Point
+        this.transform.Translate(new Vector3(0,-30.6f,0)); 
 
            
 
@@ -246,18 +303,112 @@ public class CochlearCurling : MonoBehaviour
         CallUpdate();
     }
 
-    void FixedUpdate(){
+    private void OnTriggerEnter(Collider other)
+    {
+        this.transform.position = startingPosition;
+        interp = 1.0f;
+        // UnityEngine.SceneManagement.SceneManager.LoadScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);
+    }
+
+    bool ResetReady(){
         
+
+        if (Mathf.Abs(finalMassObject.transform.position.y - finalMassPos) > 0.001f){
+            finalMassPos = finalMassObject.transform.position.y;
+            return false;
+        }
+        else{
+            return true;
+        }
+    }
+
+    void FixedUpdate(){
+        if (automateInsertionWithSpatial){
+            //Change the insertionSpeed based on distance form wall in 2D plane while keeping the curling rate fixed
+            //If detect hit with wall, start again and change the parameters and compare distance travelled
+            interp = Mathf.Clamp(interp-Time.fixedDeltaTime/timeToCurl,0f,1f);
+            ShortestDistance();
+            if (distInner < scale || distOuter< scale){
+                //reset everything
+                UnityEngine.Debug.Log("Reset");
+                if (interp < bestInterp){
+                    //This run is better than a previous run so save the scalar
+                
+                    bestInterp = interp;
+                    prevWallScalar = wallScalar;
+                    wallScalar += UnityEngine.Random.Range(0f,1f);
+                    UnityEngine.Debug.Log("Better: " + wallScalar.ToString());
+                }
+                else{
+                    //This run is worse than the previous run
+                    wallScalar = prevWallScalar += UnityEngine.Random.Range(0f,3f);
+                }
+
+                this.transform.position = startingPosition;
+                interp = 1.0f;
+                electrodeInsertionSpeed = 0;
+                automateInsertionWithSpatial = false;
+            }
+            else if (distInner > 0.5f && distInner < 2.0f){
+                electrodeInsertionSpeed = wallScalar*cochlearLength/(timeToCurl/Time.fixedDeltaTime);
+            }
+            else if (distOuter > 0.5f && distOuter<2.0f){
+                electrodeInsertionSpeed = 1/wallScalar*cochlearLength/(timeToCurl/Time.fixedDeltaTime);
+            }
+        
+            else{
+                electrodeInsertionSpeed = cochlearLength/(timeToCurl/Time.fixedDeltaTime);
+            }
+
+            if (interp < 0.00001f){
+                //We made it!!
+                UnityEngine.Debug.Log("We made it: " + wallScalar.ToString());
+                electrodeInsertionSpeed = 0;
+                automateInsertionWithSpatial = false;
+            }
+
+        }
 
         if (automateInsertion){
             automateRetraction = false;
             electrodeInsertionSpeed = cochlearLength/(timeToCurl/Time.fixedDeltaTime);
             interp = Mathf.Clamp(interp-Time.fixedDeltaTime/timeToCurl,0f,1f);
-            if (interp <= 0.000001f){
+
+            linearPosOutput.Add(this.transform.position.y);
+            rotaryPosOutput.Add(electrodeRoll);
+            // timeOutput.Add(myTimer.ElapsedMilliseconds);
+
+            if (interp < 0.00001f){
                 electrodeInsertionSpeed = 0;
                 automateInsertion = false;
             }
         }
+
+        if (automateNonlinearInsertion){
+            //To work properly with velocity, I need to be moving the joints instead but this is not configured correctly
+            //Let's just take the previous - current/Time, which will have arbitary units
+
+
+
+            numSteps+=1;
+            automateInsertion = false;
+            interp = Mathf.Clamp(interp - Time.fixedDeltaTime/timeToCurl,0f,1f);
+            //Make electrode Speed follow a vector? 
+            electrodeInsertionSpeed = 0.1f*(Mathf.Sin(Time.fixedDeltaTime*numSteps)+1);
+            //Total distance will just be integral of above so -0.1cos(T) + T + 0.1
+            linearPosOutput.Add(electrodeInsertionSpeed);
+            rotaryPosOutput.Add(electrodeRoll);
+            timeOutput.Add(numSteps*Time.fixedDeltaTime);
+
+            if (interp < 0.00001f){
+                UnityEngine.Debug.Log( (numSteps*Time.fixedDeltaTime).ToString() );
+                UnityEngine.Debug.Log( (-0.1f*Mathf.Cos(numSteps*Time.fixedDeltaTime) + numSteps*Time.fixedDeltaTime + 0.1f).ToString());
+                electrodeInsertionSpeed = 0;
+                automateNonlinearInsertion = false;
+            }
+        }
+
+
         if (automateRetraction){
             automateInsertion = false;
             electrodeInsertionSpeed = -cochlearLength/(timeToCurl/Time.fixedDeltaTime);
@@ -275,6 +426,8 @@ public class CochlearCurling : MonoBehaviour
         
         // this.transform.Translate(this.transform.up*electrodeInsertionSpeed);
         this.transform.Translate(Vector3.up*electrodeInsertionSpeed);
+        
+        // finalMassObject.transform.GetComponent<Rigidbody>().MovePosition(finalMassObject.transform.position + velocityVec.normalized * electrodeInsertionSpeed * Time.fixedDeltaTime);
 
         if (getData){
             print(finalMassObject.transform.position);
@@ -282,9 +435,9 @@ public class CochlearCurling : MonoBehaviour
         }
 
         CallUpdate();
-        
+            
 
-        ShortestDistance();
+        // ShortestDistance();
     }
 
     void CallUpdate(){
@@ -295,19 +448,37 @@ public class CochlearCurling : MonoBehaviour
     }
 
     void ShortestDistance(){
-        Vector3 start = transform.position+(vertices[total-1]+vertices[total-1-nGon/2])/2;
-        
-        RaycastHit hitSphere;
-        for (int i=0;i<360;i++){
-            Vector3 dic = Quaternion.Euler(0,i,0)*Vector3.right;
-            if (Physics.SphereCast(start,0.001f,dic,out hitSphere,100,layerMask)){
-                if (hitSphere.distance<dist){
-                    dist = hitSphere.distance;
-                    hitDirection = dic;
-                }
-            }
+        // Vector3 start = transform.position+(vertices[total-1]+vertices[total-1-nGon/2])/2;
+        Vector3 start = finalMassObject.transform.position;
+
+        RaycastHit hitSphereInner;
+        RaycastHit hitSphereOuter;
+        //Actually it is not this, we need to follow the direction of the tip. Will change this
+        Vector3 dirInner = finalMassObject.transform.right;
+        Vector3 dirOuter = -dirInner;
+
+        if (Physics.SphereCast(start,0.001f,dirInner,out hitSphereInner,100,layerMask)){
+            distInner = hitSphereInner.distance;
+            // UnityEngine.Debug.Log("Distance to Inner wall: " + distInner.ToString());
+            UnityEngine.Debug.DrawRay(start,dirInner*distInner,Color.red);
         }
-        Debug.DrawRay(start,hitDirection*dist,Color.red);
+        if (Physics.SphereCast(start,0.001f,dirOuter,out hitSphereOuter,100,layerMask)){
+            distOuter = hitSphereOuter.distance;
+            // UnityEngine.Debug.Log("Distance to Outer wall: " + distOuter.ToString());
+            UnityEngine.Debug.DrawRay(start,dirOuter*distOuter,Color.yellow);
+        }
+        
+        // RaycastHit hitSphere;
+        // for (int i=0;i<360;i++){
+        //     Vector3 dic = Quaternion.Euler(0,i,0)*Vector3.right;
+        //     if (Physics.SphereCast(start,0.001f,dic,out hitSphere,100,layerMask)){
+        //         if (hitSphere.distance<dist){
+        //             dist = hitSphere.distance;
+        //             hitDirection = dic;
+        //         }
+        //     }
+        // }
+        // UnityEngine.Debug.DrawRay(start,hitDirection*dist,Color.red);
         // if(dist<scale/2){
         //     interp = Mathf.Clamp(interp-Time.fixedDeltaTime/timeToCurl,0f,1f);
 

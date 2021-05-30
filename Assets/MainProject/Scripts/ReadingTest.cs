@@ -21,28 +21,28 @@ public class ReadingTest : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
-    {
-        if (this.GetComponent<CochlearCurling>().automateInsertion || this.GetComponent<CochlearCurling>().automateRetraction){
-            double outputVal = (double)this.transform.position.y;
-            posList.Add(outputVal);
-            FooPluginAPI_Auto.sendSingle(outputVal);
+    // void Update()
+    // {
+    //     if (this.GetComponent<CochlearCurling>().automateInsertion || this.GetComponent<CochlearCurling>().automateRetraction){
+    //         double outputVal = (double)this.transform.position.y;
+    //         posList.Add(outputVal);
+    //         // FooPluginAPI_Auto.sendSingle(outputVal);
 
-        }
-    }
+    //     }
+    // }
 
-    void OnApplicationQuit(){
-        outLength = posList.Count;
-        double[] posOutput = new double[posList.Count];
-        for (int i=0; i < posList.Count; i++){
-            posOutput[i] = posList[i];
-        };
-        var val = FooPluginAPI_Auto.simpleFunc();
-        Debug.Log(string.Format("simple_func: {0}", val));
+    // void OnApplicationQuit(){
+    //     outLength = posList.Count;
+    //     double[] posOutput = new double[posList.Count];
+    //     for (int i=0; i < posList.Count; i++){
+    //         posOutput[i] = posList[i];
+    //     };
+    //     var val = FooPluginAPI_Auto.simpleFunc();
+    //     Debug.Log(string.Format("simple_func: {0}", val));
+
+    //     print("Copying Array");
+    //     FooPluginAPI_Auto.copyArray(posOutput,outLength);
 
         
-        FooPluginAPI_Auto.copyArray(posOutput,outLength);
-
-        
-    }
+    // }
 }
