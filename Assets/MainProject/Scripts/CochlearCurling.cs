@@ -22,6 +22,7 @@ public class CochlearCurling : MonoBehaviour
    
 
     [Header("Insertion Settings")]
+    public bool manualInsertion;
     public bool automateInsertion;
 
     public bool automateInsertionWithSpatial;
@@ -29,7 +30,7 @@ public class CochlearCurling : MonoBehaviour
     public bool  automateRetraction;
     public bool ThreeDCurl;
     [Range(0f,360f)] public float electrodeRoll = 0f;
-    [Range(-0.1f,0.1f)]public float electrodeInsertionSpeed = 0f;
+    [Range(-100f,100f)]public float electrodeInsertionSpeed = 0f;
     [Range(10f,100f)]public float timeToCurl = 20f; 
     [Range(-19f,19f)] public float angleOfInsertion = 0f;
 
@@ -38,11 +39,11 @@ public class CochlearCurling : MonoBehaviour
 
     [Header("Curling Modification")]
     [Range(0,100)]public int criticalPoint;
-    public float curlingModifier = 0f;
+    [Range(0,2.5f)]public float curlingModifier = 0f;
     
 
     //Saving Data
-    [HideInInspector] public List<float> linearPosOutput,rotaryPosOutput,timeOutput;
+    [HideInInspector] public List<float> linearPosOutput,linearVelOutput,rotaryPosOutput,timeOutput;
     [HideInInspector] public Stopwatch myTimer;
     
    
@@ -70,8 +71,8 @@ public class CochlearCurling : MonoBehaviour
     //Unrolling Mesh
     private Vector3 basePoint,origin,planeNormal;
     private Vector3[] endPos,varPos;
-    private Quaternion[] varRotations,endRotations;
-    private Quaternion varRot,startRot,accumulate,currentToPrev;
+    private Quaternion[] varRotations,endRotations, otherVarRotations;
+    private Quaternion varRot,startRot,accumulate,currentToPrev, otherVarRot;
     private Vector3 pivot,prevDir,currentDir,currentDefinePos,prevDefinePos,currentCurlingPoint,prevCurlingPoint,nGonPoint;
     private float rotatePolygonPlane;
     private GameObject springMassObject, finalMassObject, pivotParent;
@@ -89,6 +90,12 @@ public class CochlearCurling : MonoBehaviour
     private float wallScalar = 2.0f, prevWallScalar = 2.0f, bestInterp = 1.0f;
     private float finalMassPos;
 
+    public bool testingArticulated;
+
+    private ArticulationJointType myJoint;
+
+    private Vector3 forceDir;
+
     
 
     #endregion
@@ -103,33 +110,41 @@ public class CochlearCurling : MonoBehaviour
         numPoints = (int)Mathf.Ceil((THETA_END-THETA_1)/stepSize);
         
         prevDir = Vector3.up;
-        origin = new Vector3(0,0,0);
+        // origin = GameObject.Find("StartingPoint").transform.localPosition;
         endRotations = new Quaternion[numPoints-1];
         varRotations = new Quaternion[numPoints-1];
+        otherVarRotations = new Quaternion[numPoints-1];
 
         endPos = new Vector3[numPoints];
         varPos = new Vector3[numPoints];
-
 
         massList = new GameObject[numPoints];
         
         total = nGon*numPoints;
         oneSideTri = nGon*(numPoints-1)*6; 
 
-        DefineCochlearPath();   
+        vertices = new Vector3[total];
+        triangles = new int[oneSideTri*2];
+
+        DefineCochlear();   
+
+        // Move top to bottom so that insertion can start correctly
+        // this.transform.Translate(new Vector3(0,-cochlearLength,0));
 
         previousInterp = interp;  
 
         numSteps = 0;
 
-        this.transform.RotateAround(finalMassObject.transform.position,Vector3.forward,angleOfInsertion - previousAngleOfInsertion);
+        // this.transform.RotateAround(finalMassObject.transform.position,Vector3.forward,angleOfInsertion - previousAngleOfInsertion);
+        this.transform.RotateAround(massList[massList.Length-1].transform.position,Vector3.forward,angleOfInsertion - previousAngleOfInsertion);
         previousAngleOfInsertion = angleOfInsertion;
 
-        // myTimer = new Stopwatch();
+        myTimer = new Stopwatch();
 
-        // myTimer.Start();
+        myTimer.Start();
 
-        numSteps = 0;
+        this.transform.position  = new Vector3(0,-30.3f,0);
+
 
         velocityVec = new Vector3(0,1,0);
 
@@ -138,11 +153,14 @@ public class CochlearCurling : MonoBehaviour
         startingPosition = this.transform.position;
         UnityEngine.Debug.Log(startingPosition);
 
+        this.gameObject.AddComponent<Rigidbody>();
+        this.gameObject.GetComponent<Rigidbody>().drag = 1f;
+        this.gameObject.GetComponent<Rigidbody>().useGravity = false;
     }
 
 
 
-    void DefineCochlearPath(){
+    void DefineCochlear(){
         for (int i=0;i<numPoints;i++){
             theta = THETA_1+stepSize*i;
             if (theta<=99.9){
@@ -166,36 +184,37 @@ public class CochlearCurling : MonoBehaviour
             }
             currentDefinePos -= origin;
 
-            // if (currentDefinePos.x <0){
-            //     currentDefinePos.x = 0;
-            // }
 
             endPos[i] = currentDefinePos;
 
-            
-
-
-            if (i==numPoints-1){
-                finalMassObject = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-                finalMassObject.name = "MasterMass";
+            if (i == numPoints-1){
+                // finalMassObject = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+                finalMassObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                finalMassObject.name = "TopMass";
                 finalMassObject.transform.localScale = 2f*scaleVector;
-                finalMassObject.AddComponent<Rigidbody>();
-                finalMassObject.GetComponent<Rigidbody>().drag = 1f;
-                finalMassObject.GetComponent<Rigidbody>().useGravity = false;
-                // springMassObject.GetComponent<CapsuleCollider>().isTrigger = true;
+                // finalMassObject.AddComponent<Rigidbody>();
+                // finalMassObject.GetComponent<Rigidbody>().drag = 1f;
+                // finalMassObject.GetComponent<Rigidbody>().useGravity = false;
+                // finalMassObject.GetComponent<Rigidbody>().isKinematic = true;
+                // finalMassObject.GetComponent<CapsuleCollider>().isTrigger = true;
+                finalMassObject.GetComponent<SphereCollider>().isTrigger = true;
                 finalMassObject.GetComponent<Renderer>().material.SetColor("_Color",Color.red);
                 // finalMassObject.GetComponent<Renderer>().material.enableInstancing = true;
                 finalMassObject.transform.SetParent(this.transform);
                 massList[i] = finalMassObject;
             }
             else{
-                springMassObject = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+                // springMassObject = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+                springMassObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 springMassObject.name = "Mass" + i.ToString();
                 springMassObject.transform.localScale = 2f*scaleVector;
-                springMassObject.AddComponent<Rigidbody>();
-                springMassObject.GetComponent<Rigidbody>().drag = 1f;
-                springMassObject.GetComponent<Rigidbody>().useGravity = false;
+                // springMassObject.AddComponent<Rigidbody>();
+                // springMassObject.GetComponent<Rigidbody>().drag = 1f;
+                // springMassObject.GetComponent<Rigidbody>().useGravity = false;
+                // springMassObject.GetComponent<Rigidbody>().isKinematic = true;
+                
                 // springMassObject.GetComponent<CapsuleCollider>().isTrigger = true;
+                springMassObject.GetComponent<SphereCollider>().isTrigger = true;
                 springMassObject.GetComponent<Renderer>().material.SetColor("_Color",Color.red);
                 // springMassObject.GetComponent<Renderer>().material.enableInstancing = true;
                 springMassObject.transform.SetParent(this.transform);
@@ -203,6 +222,7 @@ public class CochlearCurling : MonoBehaviour
 
             }
 
+            //At this point all the masses are at the same location
             varPos[0] = origin;
 
             if (i>0){
@@ -216,76 +236,69 @@ public class CochlearCurling : MonoBehaviour
                 currentToPrev = Quaternion.FromToRotation(currentDir,prevDir);
                 endRotations[i-1] = currentToPrev;
                 prevDir = currentDir; 
-
-                //Create Configurable Joints
-                massList[i].AddComponent<ConfigurableJoint>();
-                // massList[i].GetComponent<ConfigurableJoint>().configuredInWorldSpace = true;
-                massList[i].GetComponent<ConfigurableJoint>().enablePreprocessing = true;
-                massList[i].GetComponent<ConfigurableJoint>().connectedBody = massList[i-1].GetComponent<Rigidbody>();
-                massList[i].GetComponent<ConfigurableJoint>().xMotion = ConfigurableJointMotion.Locked;
-                // massList[i].GetComponent<ConfigurableJoint>().yMotion = ConfigurableJointMotion.Limited;
-                massList[i].GetComponent<ConfigurableJoint>().zMotion = ConfigurableJointMotion.Locked;
-                massList[i].GetComponent<ConfigurableJoint>().angularXMotion = ConfigurableJointMotion.Locked;
-                massList[i].GetComponent<ConfigurableJoint>().angularYMotion = ConfigurableJointMotion.Locked;
-                // massList[i].GetComponent<ConfigurableJoint>().angularZMotion = ConfigurableJointMotion.Limited;
-                massList[i].GetComponent<ConfigurableJoint>().enableCollision = true;
-
-                //For joint limits
-                // SoftJointLimitSpring springJointLimit = new SoftJointLimitSpring();
-                // springJointLimit.damper = 10f;
-                // springJointLimit.spring = 6f;
-                // SoftJointLimit jointLimit = new SoftJointLimit();
-                // jointLimit.limit=2.0f;
-                // massList[i].GetComponent<ConfigurableJoint>().linearLimit = jointLimit;
-                // massList[i].GetComponent<ConfigurableJoint>().linearLimitSpring = springJointLimit;
-                
-                
             }
 
             prevDefinePos = currentDefinePos;
+
         }
-        
-        if (evenDistribution){
-            for (int i=0;i<numPoints;i++){
+            
+
+        for (int i=0;i<numPoints;i++){
+
+            if (evenDistribution){
                 Vector3 point = new Vector3(0,(float)i*cochlearLength/numPoints,0);
                 massList[i].transform.localPosition = origin + point;
                 if (i>0){
                     float distance = Vector3.Distance(massList[i].transform.localPosition,massList[i-1].transform.localPosition);
-                    // totalLength += distance;
-                    // Debug.Log("Vector: " + massList[i].transform.localPosition.ToString("F5") + "Distance: " + distance.ToString("F5"));
-                    // Vector3 anchorVec = new Vector3(0,distance/2,0);
-                    // Vector3 anchorVec = new Vector3(0,1.3f,0);
-                    // massList[i].GetComponent<ConfigurableJoint>().anchor = -anchorVec;
-                    // massList[i].GetComponent<ConfigurableJoint>().autoConfigureConnectedAnchor = false;
-                    // massList[i].GetComponent<ConfigurableJoint>().connectedAnchor = anchorVec;
                 }
             }
-        }
 
-        else{
-            for (int i=0;i<numPoints;i++){
+            else{
                 massList[i].transform.localPosition = varPos[i];
                 if (i>0){
                     float distance = Vector3.Distance(massList[i].transform.localPosition,massList[i-1].transform.localPosition);
-                    // totalLength += distance;
-                    // Debug.Log("Vector: " + massList[i].transform.localPosition.ToString("F5") + "Distance: " + distance.ToString("F5"));
-                    // Vector3 anchorVec = new Vector3(0,distance/2,0);
-                    // Vector3 anchorVec = new Vector3(0,1.3f,0);
-                    // massList[i].GetComponent<ConfigurableJoint>().anchor = -anchorVec;
-                    // massList[i].GetComponent<ConfigurableJoint>().autoConfigureConnectedAnchor = false;
-                    // massList[i].GetComponent<ConfigurableJoint>().connectedAnchor = anchorVec;
                 }
             }
+
         }
+
+        // for (int i=1; i<numPoints;i++){
+        //     massList[i].AddComponent<ConfigurableJoint>();
+        //     // massList[i].GetComponent<ConfigurableJoint>().configuredInWorldSpace = true;
+        //     massList[i].GetComponent<ConfigurableJoint>().enablePreprocessing = true;
+        //     massList[i].GetComponent<ConfigurableJoint>().connectedBody = massList[i-1].GetComponent<Rigidbody>();
+        //     // massList[i].GetComponent<ConfigurableJoint>().xMotion = ConfigurableJointMotion.Locked;
+        //     // massList[i].GetComponent<ConfigurableJoint>().yMotion = ConfigurableJointMotion.Locked;
+        //     massList[i].GetComponent<ConfigurableJoint>().zMotion = ConfigurableJointMotion.Locked;
+        //     massList[i].GetComponent<ConfigurableJoint>().angularXMotion = ConfigurableJointMotion.Locked;
+        //     massList[i].GetComponent<ConfigurableJoint>().angularYMotion = ConfigurableJointMotion.Locked;
+        //     // massList[i].GetComponent<ConfigurableJoint>().angularZMotion = ConfigurableJointMotion.Limited;
+        //     massList[i].GetComponent<ConfigurableJoint>().enableCollision = true;
+        //     massList[i].GetComponent<ConfigurableJoint>().autoConfigureConnectedAnchor = false;
+        //     massList[i].GetComponent<ConfigurableJoint>().connectedAnchor = new Vector3(0f,1.0f,0f);
+
+                     
+        // //     // massList[i].AddComponent<FixedJoint>();
+        // //     // massList[i].GetComponent<FixedJoint>().connectedBody = massList[i-1].GetComponent<Rigidbody>();
+        // //     // massList[i].GetComponent<FixedJoint>().enableCollision = true;
+
+        
+        //     SoftJointLimitSpring springJointLimit = new SoftJointLimitSpring();
+        //     springJointLimit.damper = 10f;
+        //     springJointLimit.spring = 6f;
+        //     SoftJointLimit jointLimit = new SoftJointLimit();
+        //     jointLimit.limit=2.5f;
+        //     massList[i].GetComponent<ConfigurableJoint>().linearLimit = jointLimit;
+        //     massList[i].GetComponent<ConfigurableJoint>().linearLimitSpring = springJointLimit;
+        // }
+        
+        
+
 
         // print(cochlearLength);
         // print(totalLength);
 
-        // Starting Point
-        this.transform.Translate(new Vector3(0,-30.6f,0)); 
-
-           
-
+         
     }
 
     //When values in inspector changed
@@ -303,31 +316,35 @@ public class CochlearCurling : MonoBehaviour
         CallUpdate();
     }
 
-    private void OnTriggerEnter(Collider other)
-    {
-        this.transform.position = startingPosition;
-        interp = 1.0f;
-        // UnityEngine.SceneManagement.SceneManager.LoadScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);
-    }
-
-    bool ResetReady(){
+    // bool ResetReady(){
         
 
-        if (Mathf.Abs(finalMassObject.transform.position.y - finalMassPos) > 0.001f){
-            finalMassPos = finalMassObject.transform.position.y;
-            return false;
-        }
-        else{
-            return true;
-        }
-    }
+    //     if (Mathf.Abs(finalMassObject.transform.position.y - finalMassPos) > 0.001f){
+    //         finalMassPos = finalMassObject.transform.position.y;
+    //         return false;
+    //     } 
+    //     else{
+    //         return true;
+    //     }
+    // }
 
     void FixedUpdate(){
+        if (manualInsertion){
+            int increaseInsertionVel = Convert.ToInt32( Input.GetKey("w") );
+            int decreaseIInsertionVel = Convert.ToInt32( Input.GetKey("s") );
+            int increaseCurlingMod = Convert.ToInt32( Input.GetKey("d") );
+            int decreaseCurlingMod = Convert.ToInt32( Input.GetKey("a") );
+
+            electrodeInsertionSpeed = 0.5f*increaseInsertionVel - 0.5f*decreaseIInsertionVel;
+            // interp = interp-Time.fixedDeltaTime/timeToCurl;
+
+            curlingModifier = Mathf.Clamp( curlingModifier + 0.005f*increaseCurlingMod - 0.005f*decreaseCurlingMod, 0f, 2.5f);
+        }
         if (automateInsertionWithSpatial){
             //Change the insertionSpeed based on distance form wall in 2D plane while keeping the curling rate fixed
             //If detect hit with wall, start again and change the parameters and compare distance travelled
             interp = Mathf.Clamp(interp-Time.fixedDeltaTime/timeToCurl,0f,1f);
-            ShortestDistance();
+            // ShortestDistance();
             if (distInner < scale || distOuter< scale){
                 //reset everything
                 UnityEngine.Debug.Log("Reset");
@@ -371,10 +388,14 @@ public class CochlearCurling : MonoBehaviour
 
         if (automateInsertion){
             automateRetraction = false;
-            electrodeInsertionSpeed = cochlearLength/(timeToCurl/Time.fixedDeltaTime);
-            interp = Mathf.Clamp(interp-Time.fixedDeltaTime/timeToCurl,0f,1f);
+            electrodeInsertionSpeed = cochlearLength/timeToCurl;
+            // electrodeInsertionSpeed = cochlearLength/(timeToCurl/Time.fixedDeltaTime);
+            // interp = Mathf.Clamp(interp-Time.fixedDeltaTime/timeToCurl,0f,1f);
+            previousInterp = interp;
+            interp = interp-Time.fixedDeltaTime/timeToCurl;
 
             linearPosOutput.Add(this.transform.position.y);
+            linearVelOutput.Add(this.transform.GetComponent<Rigidbody>().velocity.y);
             rotaryPosOutput.Add(electrodeRoll);
             // timeOutput.Add(myTimer.ElapsedMilliseconds);
 
@@ -419,13 +440,25 @@ public class CochlearCurling : MonoBehaviour
             }
         }
 
-        qAngle = Quaternion.AngleAxis(-electrodeRoll,Vector3.up);
-        // pivotParent.transform.rotation = Quaternion.Euler(0,0,angleOfInsertion);
+        // qAngle = Quaternion.AngleAxis(-electrodeRoll,Vector3.up);
+        qAngle = Quaternion.AngleAxis(-electrodeRoll,massList[0].transform.up);
         insertionAngle = Quaternion.AngleAxis(angleOfInsertion,this.transform.forward);
-        // finalMassObject.transform.Translate(Vector3.up*electrodeInsertionSpeed*Time.fixedDeltaTime);
         
-        // this.transform.Translate(this.transform.up*electrodeInsertionSpeed);
-        this.transform.Translate(Vector3.up*electrodeInsertionSpeed);
+        
+        //Since fixedDeltaTime is 0.02seconds this will move 0.02*speed units per frame. Why does it stop if interp forces are running?
+        //This still bounces up and down
+        // this.transform.Translate(this.transform.up*electrodeInsertionSpeed*Time.fixedDeltaTime);
+        this.GetComponent<Rigidbody>().AddForce(Vector3.up * electrodeInsertionSpeed);
+
+        //Apply the speed as a force just to check
+        // foreach (GameObject mass in massList){
+            // mass.transform.GetComponent<Rigidbody>().MovePosition(mass.transform.position + Vector3.up*electrodeInsertionSpeed*Time.fixedDeltaTime);
+            // mass.transform.GetComponent<Rigidbody>().velocity += Vector3.up*electrodeInsertionSpeed*Time.deltaTime;
+            // mass.transform.GetComponent<ConfigurableJoint>().targetVelocity.y 
+            // mass.transform.GetComponent<Rigidbody>().AddForce(Vector3.up*electrodeInsertionSpeed,ForceMode.Force);
+        // }
+        
+        // this.transform.Translate(Vector3.up*electrodeInsertionSpeed);
         
         // finalMassObject.transform.GetComponent<Rigidbody>().MovePosition(finalMassObject.transform.position + velocityVec.normalized * electrodeInsertionSpeed * Time.fixedDeltaTime);
 
@@ -488,35 +521,23 @@ public class CochlearCurling : MonoBehaviour
 
 
     void MoveCochlearVertices(){
-        vertices = new Vector3[total];
         int v=0;
-
         startRot = new Quaternion(0,0,0,1);
         varRot = startRot;
         prevCurlingPoint = Vector3.zero;
-        
         for (int i=0;i<numPoints;i++){
             if (i>0){
                 if (i>criticalPoint){
-                    //Why this all get fucked up if I do the automatic insertion procedure??
-                    float v1 = (i);
+                    //Why does this all get fucked up if I do the automatic insertion procedure?? **** Must fix this
+                    float v1 = i;
                     float mod = curlingModifier * v1 / (numPoints - 1);
-                    if (previousInterp>interp){
-                        //Then we are curling
-                        modifiedInterp = Mathf.Clamp(interp*(1+mod),0,1);
-                    }
-                    else{
-                        //Then we are uncurling
-                        modifiedInterp = Mathf.Clamp(interp*(1-mod),0,1);
-                    }
+                    modifiedInterp = Mathf.Clamp(interp*(1-mod),0,1); // Only for curling?
                     varRotations[i-1] = Quaternion.Slerp(startRot,endRotations[i-1],modifiedInterp);
                 }
                 else {
                     varRotations[i-1] = Quaternion.Slerp(startRot,endRotations[i-1],interp);
                 }
-                
-                
-            
+
                 varRot *= varRotations[i-1];
 
                 currentCurlingPoint = endPos[i];
@@ -532,41 +553,54 @@ public class CochlearCurling : MonoBehaviour
             
             basePoint = varPos[i];
             
+            
             Vector3 rotatedBasePoint = qAngle * basePoint;
-            // basePoint = qAngle * basePoint;
+            if (i==0){
+                forceDir = (basePoint - massList[i].transform.position);
+            }
 
-            // massList[i].transform.localPosition = rotatedBasePoint;
-            Vector3 forceDir = (rotatedBasePoint - massList[i].transform.localPosition);
-            massList[i].GetComponent<Rigidbody>().AddForce(forceDir);
+            else{
+                forceDir = (rotatedBasePoint - massList[i].transform.position);
+            }
+        
+            // UnityEngine.Debug.DrawRay(massList[i].transform.position,forceDir,Color.green,100);
+            // Only Want this force if interp is changing
+
+            // massList[i].GetComponent<Rigidbody>().MovePosition(rotatedBasePoint);
+            // massList[i].GetComponent<Rigidbody>().MoveRotation(varRot);
+            // if (interp>0.0001f && interp<0.9999f){
+            // massList[i].GetComponent<Rigidbody>().AddForce(forceDir);
+            // massList[i].transform.GetComponent<Rigidbody>().velocity += forceDir*Time.deltaTime;
+            if (i==0){
+                massList[i].transform.localPosition = basePoint;
+            }
+            else{
+
+                massList[i].transform.localPosition = basePoint;
+                massList[i].transform.RotateAround(massList[0].transform.position,Vector3.up,electrodeRoll);
+                // massList[i].transform.localRotation = varRot;
+                
+            }
+            
 
             // massList[i].GetComponent<Rigidbody>().velocity = forceDir;
             planeNormal = (basePoint-prevCurlingPoint);
             rotatePolygonPlane = Vector3.SignedAngle(Vector3.up,planeNormal,Vector3.forward);
-            // Vector3 shift = new Vector3(0,massList[i].transform.localScale.y,0);
             for (int n=0;n<nGon;n++){
                 nGonPoint = new Vector3(scale*Mathf.Cos(2*Mathf.PI*n/nGon),0,scale*Mathf.Sin(2*Mathf.PI*n/nGon));
                 nGonPoint = Quaternion.AngleAxis(rotatePolygonPlane,Vector3.forward)*nGonPoint;
 
                 vertices[v] = massList[i].transform.localPosition + qAngle*nGonPoint;
-                // if (i==0){
-                //     vertices[v] -= shift; 
-                // }
-                // if (i==numPoints-1){
-                //     vertices[v] += shift;
-                // }
-                // vertices[v] = rotatedBasePoint + qAngle*nGonPoint;
                 v+=1;
             }
             prevCurlingPoint = basePoint;
         }
-
         previousInterp = interp;
 
         DefineTriangles();
     }
 
     void DefineTriangles(){
-        triangles = new int[oneSideTri*2];
         int v=0;
         int t=0;
         for (int i=0;i<numPoints-1;i++){
@@ -589,53 +623,67 @@ public class CochlearCurling : MonoBehaviour
         }
 
     }
-    // void MeshCollision() {
-    //     // check collisions
-    //     for (int i=0;i<numPoints;i++){
-    //         hitColliders = Physics.OverlapCapsule()
-    //     }
-    //     hitColliders = Physics.OverlapSphere(this.transform.position,0.5f,layerMask);
-    //     // int numOverlaps = Physics.OverlapSphereNonAlloc(this.transform.position,this.GetComponent<SphereCollider>().radius,hitColliders,layerMask,QueryTriggerInteraction.UseGlobal);
-    //     // if (numOverlaps>0){
-    //     //     Debug.Log("Here: " + numOverlaps.ToString());
-    //     // }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        UnityEngine.Debug.Log("Collide Event");
+    }
+    // // void MeshCollision() {
+    // //     // check collisions
+    // //     for (int i=0;i<numPoints;i++){
+    // //         hitColliders = Physics.OverlapCapsule()
+    // //     }
+    // //     hitColliders = Physics.OverlapSphere(this.transform.position,0.5f,layerMask);
+    // //     // int numOverlaps = Physics.OverlapSphereNonAlloc(this.transform.position,this.GetComponent<SphereCollider>().radius,hitColliders,layerMask,QueryTriggerInteraction.UseGlobal);
+    // //     // if (numOverlaps>0){
+    // //     //     Debug.Log("Here: " + numOverlaps.ToString());
+    // //     // }
         
-    //     // // int numOverlaps = Physics.OverlapBoxNonAlloc(this.transform.position,this.transform.localScale*-0.5f,hitColliders,this.transform.rotation,layerMask,QueryTriggerInteraction.UseGlobal);
-    //     for (int i = 0; i < hitColliders.Length; i++) {
-    //         var collider = hitColliders[i];
-    //         Vector3 otherPosition = collider.gameObject.transform.position;
-    //         Quaternion otherRotation = collider.gameObject.transform.rotation;
-    //         Vector3 direction;
-    //         float distance;
+    // //     // // int numOverlaps = Physics.OverlapBoxNonAlloc(this.transform.position,this.transform.localScale*-0.5f,hitColliders,this.transform.rotation,layerMask,QueryTriggerInteraction.UseGlobal);
+    // //     for (int i = 0; i < hitColliders.Length; i++) {
+    // //         var collider = hitColliders[i];
+    // //         Vector3 otherPosition = collider.gameObject.transform.position;
+    // //         Quaternion otherRotation = collider.gameObject.transform.rotation;
+    // //         Vector3 direction;
+    // //         float distance;
 
-    //         bool overlap = Physics.ComputePenetration(this.GetComponent<SphereCollider>(),this.transform.position,
-    //             this.transform.rotation,collider,otherPosition,
-    //             otherRotation,out direction,out distance);
+    // //         bool overlap = Physics.ComputePenetration(this.GetComponent<SphereCollider>(),this.transform.position,
+    // //             this.transform.rotation,collider,otherPosition,
+    // //             otherRotation,out direction,out distance);
 
-    //         if (overlap){
-    //             penetrationForce = -10*CollisionForce*(direction*distance);
+    // //         if (overlap){
+    // //             penetrationForce = -10*CollisionForce*(direction*distance);
                 
-    //             // Vector3 movementDirection = moveDir + penetrationVector;
-    //             // Vector3 velocityProjected = Vector3.Project(rb.velocity, -direction);
-    //             rb.AddRelativeForce(penetrationForce);
+    // //             // Vector3 movementDirection = moveDir + penetrationVector;
+    // //             // Vector3 velocityProjected = Vector3.Project(rb.velocity, -direction);
+    // //             rb.AddRelativeForce(penetrationForce);
 
-    //             // moveDir = movementDirection.normalized;
-    //             // this.transform.position = this.transform.position + penetrationVector;
-    //             // velocity -= velocityProjected;
-    //             Debug.Log("OnCollisionEnter with " + hitColliders[i].gameObject.name + " penetration vector: " + penetrationForce.ToString("F3"));
-    //         }
-    //         else
-    //         {
-    //             Debug.Log("OnCollision Enter with " + hitColliders[i].gameObject.name + " no penetration");
-    //         }
+    // //             // moveDir = movementDirection.normalized;
+    // //             // this.transform.position = this.transform.position + penetrationVector;
+    // //             // velocity -= velocityProjected;
+    // //             Debug.Log("OnCollisionEnter with " + hitColliders[i].gameObject.name + " penetration vector: " + penetrationForce.ToString("F3"));
+    // //         }
+    // //         else
+    // //         {
+    // //             Debug.Log("OnCollision Enter with " + hitColliders[i].gameObject.name + " no penetration");
+    // //         }
+    // //     }
+
+    // // }
+
+    // void OnDrawGizmos()
+    // {
+    //     Gizmos.color = Color.blue;
+    //     for (int i=1;i<numPoints;i++){
+    //         Gizmos.DrawLine(endPos[i], varPos[i]);
     //     }
-
     // }
+
     void UpdateMesh(){
         mesh.Clear(); //Clear out the current buffer 
         mesh.vertices = vertices;
         mesh.triangles = triangles;
 
-        mesh.RecalculateNormals(); //Calculate normal based on triangle vertices are part of
+        // mesh.RecalculateNormals(); //Calculate normal based on triangle vertices are part of
     }
 }
