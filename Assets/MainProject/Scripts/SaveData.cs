@@ -6,31 +6,35 @@ using System.Linq;
 
 public class SaveData : MonoBehaviour
 {
-    public string FolderName;
-    public bool SaveThisData;    
+    // public string FolderName;  
     private string current_time;
 
-    private List<float> linearData,rotaryData,timeData;
+    private List<float> linearVelData, RCMData,timeData;
+    private float timeVal = 0;
+
 
     void OnApplicationQuit(){
-        if (SaveThisData){
-            string DirectoryPath = Application.dataPath + "/Data/" + FolderName;
+        if (this.GetComponent<CochlearCurling>().SaveThisData){
+            string DirectoryPath = Application.dataPath + "/Data/" + "InsertionExperiment";
             if (!Directory.Exists(DirectoryPath)){
                 Directory.CreateDirectory(DirectoryPath);
             }
-            linearData = this.transform.GetComponent<CochlearCurling>().linearPosOutput;
-            rotaryData = this.transform.GetComponent<CochlearCurling>().rotaryPosOutput;
             timeData = this.transform.GetComponent<CochlearCurling>().timeOutput;
+            linearVelData = this.transform.GetComponent<CochlearCurling>().linearVelOutput;
+            RCMData = this.transform.GetComponent<CochlearCurling>().RCMOutput;
+            
             current_time = System.DateTime.Now.ToString("yyyy-MM-dd HH_mm_ss");
             string raw_path = DirectoryPath + "/Date_" + current_time + ".txt"; 
             StreamWriter raw_data = new StreamWriter(raw_path);
-            for (int i=0; i<linearData.Count;i++){
-                raw_data.Write(timeData[i]-timeData[0]);
+            for (int i=0; i<linearVelData.Count;i++){
+                raw_data.Write(timeData[i]);
                 raw_data.Write(" ");
-                raw_data.Write(linearData[i]);
+                raw_data.Write(linearVelData[i]);
                 raw_data.Write(" ");
-                raw_data.Write(Mathf.Abs(rotaryData[i]-rotaryData[0]));
+                raw_data.Write(Mathf.Abs(RCMData[i] - RCMData[0]));
+                raw_data.Write(" ");
                 raw_data.Write(System.Environment.NewLine);
+                // timeVal += 0.02f;
             }
 
         }
